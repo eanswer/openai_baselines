@@ -61,6 +61,19 @@ def traj_segment_generator(pi, env, horizon, stochastic):
             ob = env.reset()
         t += 1
 
+def play_one_round(pi, env):
+    t = 0
+    ac = env.action_space.sample() # not used, just so we have the datatype
+    ob = env.reset()
+
+    while True:
+        prevac = ac
+        ac, vpred = pi.act(False, ob)
+        ob, rew, done, _ = env.step(ac)
+
+        if done:
+            return
+
 def add_vtarg_and_adv(seg, gamma, lam):
     """
     Compute target value using TD(lambda) estimator, and advantage with GAE(lambda)
@@ -90,7 +103,8 @@ def learn(env, policy_fn, *,
         max_timesteps=0, max_episodes=0, max_iters=0, max_seconds=0,  # time constraint
         callback=None, # you can do anything in the callback, since it takes locals(), globals()
         adam_epsilon=1e-5,
-        schedule='constant' # annealing for stepsize parameters (epsilon and adam)
+        schedule='constant', # annealing for stepsize parameters (epsilon and adam)
+        play=False
         ):
     
     sess = U.get_session()
@@ -147,99 +161,104 @@ def learn(env, policy_fn, *,
         print("load")
     ########################################################################
 
-    # Prepare for rollouts
-    # ----------------------------------------
-    seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True)
-    
-    episodes_so_far = 0
-    timesteps_so_far = 0
-    iters_so_far = 0
-    tstart = time.time()
-    lenbuffer = deque(maxlen=100) # rolling buffer for episode lengths
-    rewbuffer = deque(maxlen=100) # rolling buffer for episode rewards
-
-    assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
-
-    while True:
-        if callback: callback(locals(), globals())
-        if max_timesteps and timesteps_so_far >= max_timesteps:
-            break
-        elif max_episodes and episodes_so_far >= max_episodes:
-            break
-        elif max_iters and iters_so_far >= max_iters:
-            break
-        elif max_seconds and time.time() - tstart >= max_seconds:
-            break
-
-        if schedule == 'constant':
-            cur_lrmult = 1.0
-        elif schedule == 'linear':
-            cur_lrmult =  max(1.0 - float(timesteps_so_far) / max_timesteps, 0)
-        else:
-            raise NotImplementedError
-
-        logger.log("********** Iteration %i ************"%iters_so_far)
-
-        seg = seg_gen.__next__()
-        add_vtarg_and_adv(seg, gamma, lam)
-
-        # ob, ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
-        ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
-        vpredbefore = seg["vpred"] # predicted value function before udpate
-        atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
-        d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), shuffle=not pi.recurrent)
-        optim_batchsize = optim_batchsize or ob.shape[0]
-
-        if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
-
-        assign_old_eq_new() # set old parameter values to new parameter values
-        logger.log("Optimizing...")
-        logger.log(fmt_row(13, loss_names))
-        # Here we do a bunch of optimization epochs over the data
-        for _ in range(optim_epochs):
-            losses = [] # list of tuples, each of which gives the loss for a minibatch
-            for batch in d.iterate_once(optim_batchsize):
-                *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
-                adam.update(g, optim_stepsize * cur_lrmult)
-                losses.append(newlosses)
-            logger.log(fmt_row(13, np.mean(losses, axis=0)))
-
-        logger.log("Evaluating losses...")
-        losses = []
-        for batch in d.iterate_once(optim_batchsize):
-            newlosses = compute_losses(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
-            losses.append(newlosses)
-        meanlosses,_,_ = mpi_moments(losses, axis=0)
-        logger.log(fmt_row(13, meanlosses))
-        for (lossval, name) in zipsame(meanlosses, loss_names):
-            logger.record_tabular("loss_"+name, lossval)
-        logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
-        lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
-        listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
-        lens, rews = map(flatten_lists, zip(*listoflrpairs))
-        lenbuffer.extend(lens)
-        rewbuffer.extend(rews)
-        logger.record_tabular("EpLenMean", np.mean(lenbuffer))
-        logger.record_tabular("EpRewMean", np.mean(rewbuffer))
-        logger.record_tabular("EpThisIter", len(lens))
-        episodes_so_far += len(lens)
-        timesteps_so_far += sum(lens)
-        iters_so_far += 1
-        logger.record_tabular("EpisodesSoFar", episodes_so_far)
-        logger.record_tabular("TimestepsSoFar", timesteps_so_far)
-        logger.record_tabular("TimeElapsed", time.time() - tstart)
-        if MPI.COMM_WORLD.Get_rank()==0:
-            logger.dump_tabular()
+    if play and restore_model_from_file:
+        ######################### Jie Xu ############################
+        play_one_round(pi, env)
+        #############################################################
+    else:
+        # Prepare for rollouts
+        # ----------------------------------------
+        seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True)
         
-        ######################### Save model / Jie Xu ##########################
-        if iters_so_far % save_model_interval == 0:
-            if save_model_with_prefix:
-                saver = tf.train.Saver()
-                with U.get_session().as_default() as sess:
-                    modelF= save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
-                    save_path = saver.save(sess, modelF)
-                    logger.log("Saved model to file :{}".format(modelF))
-        ########################################################################
+        episodes_so_far = 0
+        timesteps_so_far = 0
+        iters_so_far = 0
+        tstart = time.time()
+        lenbuffer = deque(maxlen=100) # rolling buffer for episode lengths
+        rewbuffer = deque(maxlen=100) # rolling buffer for episode rewards
+
+        assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
+
+        while True:
+            if callback: callback(locals(), globals())
+            if max_timesteps and timesteps_so_far >= max_timesteps:
+                break
+            elif max_episodes and episodes_so_far >= max_episodes:
+                break
+            elif max_iters and iters_so_far >= max_iters:
+                break
+            elif max_seconds and time.time() - tstart >= max_seconds:
+                break
+
+            if schedule == 'constant':
+                cur_lrmult = 1.0
+            elif schedule == 'linear':
+                cur_lrmult =  max(1.0 - float(timesteps_so_far) / max_timesteps, 0)
+            else:
+                raise NotImplementedError
+
+            logger.log("********** Iteration %i ************"%iters_so_far)
+
+            seg = seg_gen.__next__()
+            add_vtarg_and_adv(seg, gamma, lam)
+
+            # ob, ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
+            ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
+            vpredbefore = seg["vpred"] # predicted value function before udpate
+            atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
+            d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), shuffle=not pi.recurrent)
+            optim_batchsize = optim_batchsize or ob.shape[0]
+
+            if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
+
+            assign_old_eq_new() # set old parameter values to new parameter values
+            logger.log("Optimizing...")
+            logger.log(fmt_row(13, loss_names))
+            # Here we do a bunch of optimization epochs over the data
+            for _ in range(optim_epochs):
+                losses = [] # list of tuples, each of which gives the loss for a minibatch
+                for batch in d.iterate_once(optim_batchsize):
+                    *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
+                    adam.update(g, optim_stepsize * cur_lrmult)
+                    losses.append(newlosses)
+                logger.log(fmt_row(13, np.mean(losses, axis=0)))
+
+            logger.log("Evaluating losses...")
+            losses = []
+            for batch in d.iterate_once(optim_batchsize):
+                newlosses = compute_losses(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
+                losses.append(newlosses)
+            meanlosses,_,_ = mpi_moments(losses, axis=0)
+            logger.log(fmt_row(13, meanlosses))
+            for (lossval, name) in zipsame(meanlosses, loss_names):
+                logger.record_tabular("loss_"+name, lossval)
+            logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
+            lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
+            listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
+            lens, rews = map(flatten_lists, zip(*listoflrpairs))
+            lenbuffer.extend(lens)
+            rewbuffer.extend(rews)
+            logger.record_tabular("EpLenMean", np.mean(lenbuffer))
+            logger.record_tabular("EpRewMean", np.mean(rewbuffer))
+            logger.record_tabular("EpThisIter", len(lens))
+            episodes_so_far += len(lens)
+            timesteps_so_far += sum(lens)
+            iters_so_far += 1
+            logger.record_tabular("EpisodesSoFar", episodes_so_far)
+            logger.record_tabular("TimestepsSoFar", timesteps_so_far)
+            logger.record_tabular("TimeElapsed", time.time() - tstart)
+            if MPI.COMM_WORLD.Get_rank()==0:
+                logger.dump_tabular()
+            
+            ######################### Save model / Jie Xu ##########################
+            if iters_so_far % save_model_interval == 0:
+                if save_model_with_prefix:
+                    saver = tf.train.Saver()
+                    with U.get_session().as_default() as sess:
+                        modelF= save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
+                        save_path = saver.save(sess, modelF)
+                        logger.log("Saved model to file :{}".format(modelF))
+            ########################################################################
 
     return pi
 
