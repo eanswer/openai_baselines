@@ -260,6 +260,15 @@ def learn(env, policy_fn, *,
                         logger.log("Saved model to file :{}".format(modelF))
             ########################################################################
 
+    ######################### Save model / Jie Xu ##########################
+    if save_model_with_prefix:
+        saver = tf.train.Saver()
+        with U.get_session().as_default() as sess:
+            modelF= save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
+            save_path = saver.save(sess, modelF)
+            logger.log("Saved model to file :{}".format(modelF))
+    ########################################################################
+    
     return pi
 
 def flatten_lists(listoflists):
