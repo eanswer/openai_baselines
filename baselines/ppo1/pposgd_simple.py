@@ -82,11 +82,21 @@ def learn(env, policy_fn, *,
         clip_param, entcoeff, # clipping parameter epsilon, entropy coeff
         optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
         gamma, lam, # advantage estimation
+        ######################### Save model / Jie Xu ##########################
+        save_model_interval,
+        save_model_with_prefix, # Save the model with this prefix after save_model_interval iters
+        restore_model_from_file,# Load the states/model from this file.
+        ########################################################################
         max_timesteps=0, max_episodes=0, max_iters=0, max_seconds=0,  # time constraint
         callback=None, # you can do anything in the callback, since it takes locals(), globals()
         adam_epsilon=1e-5,
         schedule='constant' # annealing for stepsize parameters (epsilon and adam)
         ):
+    
+    sess = U.get_session()
+    init_op = tf.global_variables_initializer()
+    sess.run(init_op)
+
     # Setup losses and stuff
     # ----------------------------------------
     ob_space = env.observation_space
@@ -128,10 +138,19 @@ def learn(env, policy_fn, *,
     U.initialize()
     adam.sync()
 
+    ######################### Save model / Jie Xu ##########################
+    # Resume model if a model file is provided
+    if restore_model_from_file:
+        saver=tf.train.Saver()
+        saver.restore(tf.get_default_session(), restore_model_from_file)
+        logger.log("Loaded model from {}".format(restore_model_from_file))
+        print("load")
+    ########################################################################
+
     # Prepare for rollouts
     # ----------------------------------------
     seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True)
-
+    
     episodes_so_far = 0
     timesteps_so_far = 0
     iters_so_far = 0
@@ -211,6 +230,16 @@ def learn(env, policy_fn, *,
         logger.record_tabular("TimeElapsed", time.time() - tstart)
         if MPI.COMM_WORLD.Get_rank()==0:
             logger.dump_tabular()
+        
+        ######################### Save model / Jie Xu ##########################
+        if iters_so_far % save_model_interval == 0:
+            if save_model_with_prefix:
+                saver = tf.train.Saver()
+                with U.get_session().as_default() as sess:
+                    modelF= save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
+                    save_path = saver.save(sess, modelF)
+                    logger.log("Saved model to file :{}".format(modelF))
+        ########################################################################
 
     return pi
 

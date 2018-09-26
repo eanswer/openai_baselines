@@ -50,7 +50,6 @@ _game_envs['retro'] = {
     'SpaceInvaders-Snes',
 }
 
-
 def train(args, extra_args):
     env_type, env_id = get_env_type(args.env)
     print('env_type: {}'.format(env_type))
@@ -76,6 +75,8 @@ def train(args, extra_args):
         env=env,
         seed=seed,
         total_timesteps=total_timesteps,
+        # Jie XU
+        save_interval = 10,
         **alg_kwargs
     )
 
@@ -193,7 +194,6 @@ def parse_cmdline_kwargs(args):
             return v
 
     return {k: parse(v) for k,v in parse_unknown_args(args).items()}
-
 
 
 def main():

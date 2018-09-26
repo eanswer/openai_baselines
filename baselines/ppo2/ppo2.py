@@ -341,6 +341,7 @@ def learn(*, network, env, total_timesteps, seed=None, nsteps=2048, ent_coef=0.0
 
     nupdates = total_timesteps//nbatch
     for update in range(1, nupdates+1):
+        print("current ", update, " / ", nupdates + 1)
         assert nbatch % nminibatches == 0
         # Start timer
         tstart = time.time()
