@@ -61,6 +61,7 @@ def traj_segment_generator(pi, env, horizon, stochastic):
             ob = env.reset()
         t += 1
 
+######################### Save model / Jie Xu ##########################
 def play_one_round(pi, env):
     t = 0
     ac = env.action_space.sample() # not used, just so we have the datatype
@@ -73,6 +74,7 @@ def play_one_round(pi, env):
 
         if done:
             return
+########################################################################
 
 def add_vtarg_and_adv(seg, gamma, lam):
     """
@@ -96,6 +98,7 @@ def learn(env, policy_fn, *,
         optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
         gamma, lam, # advantage estimation
         ######################### Save model / Jie Xu ##########################
+        model_directory,
         save_model_interval,
         save_model_with_prefix, # Save the model with this prefix after save_model_interval iters
         restore_model_from_file,# Load the states/model from this file.
@@ -156,11 +159,10 @@ def learn(env, policy_fn, *,
     # Resume model if a model file is provided
     if restore_model_from_file:
         saver=tf.train.Saver()
-        saver.restore(tf.get_default_session(), restore_model_from_file)
-        logger.log("Loaded model from {}".format(restore_model_from_file))
+        saver.restore(tf.get_default_session(), model_directory+restore_model_from_file)
+        logger.log("Loaded model from {}".format(model_directory+restore_model_from_file))
         print("load")
     ########################################################################
-
     if play and restore_model_from_file:
         ######################### Jie Xu ############################
         play_one_round(pi, env)
@@ -179,6 +181,12 @@ def learn(env, policy_fn, *,
 
         assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
 
+        ################# Record training results / Jie Xu #####################
+        training_rewards_file = model_directory + "rewards.txt"
+        fp = open(training_rewards_file, "w")
+        fp.close()
+        ########################################################################
+        
         while True:
             if callback: callback(locals(), globals())
             if max_timesteps and timesteps_so_far >= max_timesteps:
@@ -255,16 +263,22 @@ def learn(env, policy_fn, *,
                 if save_model_with_prefix:
                     saver = tf.train.Saver()
                     with U.get_session().as_default() as sess:
-                        modelF= save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
+                        modelF= model_directory+save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
                         save_path = saver.save(sess, modelF)
                         logger.log("Saved model to file :{}".format(modelF))
+            ########################################################################
+
+            ################# Record training results / Jie Xu #####################
+            fp = open(training_rewards_file, "a")
+            fp.write("%f\n" % np.mean(rewbuffer))
+            fp.close()
             ########################################################################
 
     ######################### Save model / Jie Xu ##########################
     if save_model_with_prefix:
         saver = tf.train.Saver()
         with U.get_session().as_default() as sess:
-            modelF= save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
+            modelF= model_directory+save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
             save_path = saver.save(sess, modelF)
             logger.log("Saved model to file :{}".format(modelF))
     ########################################################################
