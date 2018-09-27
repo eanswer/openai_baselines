@@ -63,16 +63,21 @@ def traj_segment_generator(pi, env, horizon, stochastic):
 
 ######################### Save model / Jie Xu ##########################
 def play_one_round(pi, env):
-    t = 0
     ac = env.action_space.sample() # not used, just so we have the datatype
     ob = env.reset()
+    rewards = 0
+    itr = 0
 
     while True:
         prevac = ac
         ac, vpred = pi.act(False, ob)
         ob, rew, done, _ = env.step(ac)
 
-        if done:
+        rewards += rew
+        itr += 1
+
+        if itr == 1000 or done:
+            print("rewards:", rewards)
             return
 ########################################################################
 
@@ -92,7 +97,7 @@ def add_vtarg_and_adv(seg, gamma, lam):
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
     seg["tdlamret"] = seg["adv"] + seg["vpred"]
 
-def learn(env, policy_fn, *,
+def learn(env, play_env, policy_fn, *,
         timesteps_per_actorbatch, # timesteps per actor per update
         clip_param, entcoeff, # clipping parameter epsilon, entropy coeff
         optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
@@ -165,7 +170,8 @@ def learn(env, policy_fn, *,
     ########################################################################
     if play and restore_model_from_file:
         ######################### Jie Xu ############################
-        play_one_round(pi, env)
+        for times in range(5):
+            play_one_round(pi, play_env)
         #############################################################
     else:
         # Prepare for rollouts
@@ -188,6 +194,11 @@ def learn(env, policy_fn, *,
         ########################################################################
         
         while True:
+            ################# play trained model / Jie Xu #####################
+            if iters_so_far % 50 == 0:
+                play_one_round(pi, play_env)
+            ###################################################################
+
             if callback: callback(locals(), globals())
             if max_timesteps and timesteps_so_far >= max_timesteps:
                 break
@@ -278,7 +289,7 @@ def learn(env, policy_fn, *,
         if save_model_with_prefix:
             saver = tf.train.Saver()
             with U.get_session().as_default() as sess:
-                modelF= model_directory+save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
+                modelF= model_directory+save_model_with_prefix+"_final.ckpt"
                 save_path = saver.save(sess, modelF)
                 logger.log("Saved model to file :{}".format(modelF))
         ########################################################################
