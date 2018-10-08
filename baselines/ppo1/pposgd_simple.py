@@ -76,7 +76,7 @@ def play_one_round(pi, env):
         rewards += rew
         itr += 1
 
-        if itr == 1000 or done:
+        if itr == 600 or done:
             print("rewards:", rewards)
             return
 ########################################################################
@@ -161,6 +161,9 @@ def learn(env, play_env, policy_fn, *,
     adam.sync()
 
     ######################### Save model / Jie Xu ##########################
+    with U.get_session().as_default() as sess:
+        writer = tf.summary.FileWriter("/home/eanswer/Projects/ReinforcementLearning/tensorflow_tutorial")
+        writer.add_graph(tf.get_default_graph())
     # Resume model if a model file is provided
     if restore_model_from_file:
         saver=tf.train.Saver()
