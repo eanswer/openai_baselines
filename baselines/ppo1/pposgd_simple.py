@@ -76,7 +76,7 @@ def play_one_round(pi, env):
         rewards += rew
         itr += 1
 
-        if itr == 600 or done:
+        if itr == 1000 or done:
             print("rewards:", rewards)
             return
 ########################################################################
@@ -173,7 +173,7 @@ def learn(env, play_env, policy_fn, *,
     ########################################################################
     if play and restore_model_from_file:
         ######################### Jie Xu ############################
-        for times in range(5):
+        for times in range(100):
             play_one_round(pi, play_env)
         #############################################################
     else:
@@ -198,7 +198,7 @@ def learn(env, play_env, policy_fn, *,
         
         while True:
             ################# play trained model / Jie Xu #####################
-            if iters_so_far % 10 == 0:
+            if iters_so_far % 5 == 0:
                 play_one_round(pi, play_env)
             ###################################################################
 
