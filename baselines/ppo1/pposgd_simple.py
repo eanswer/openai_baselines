@@ -68,6 +68,11 @@ def play_one_round(pi, env):
     rewards = 0
     itr = 0
 
+    # output for runningmeanst
+    mean, std = pi.get_mean_std()
+    print('mean = ', mean)
+    print('std = ', std)
+
     while True:
         prevac = ac
         ac, vpred = pi.act(False, ob)
@@ -76,7 +81,7 @@ def play_one_round(pi, env):
         rewards += rew
         itr += 1
 
-        if itr == 1000 or done:
+        if done:
             print("rewards:", rewards)
             return
 ########################################################################
