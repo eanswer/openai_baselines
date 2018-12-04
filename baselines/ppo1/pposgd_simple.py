@@ -62,6 +62,7 @@ def traj_segment_generator(pi, env, horizon, stochastic):
         t += 1
 
 ######################### Save model / Jie Xu ##########################
+import os
 def play_one_round(pi, env):
     ac = env.action_space.sample() # not used, just so we have the datatype
     ob = env.reset()
@@ -69,20 +70,42 @@ def play_one_round(pi, env):
     itr = 0
 
     # output for runningmeanst
-    mean, std = pi.get_mean_std()
-    print('mean = ', mean)
-    print('std = ', std)
+    # mean, std = pi.get_mean_std()
+    # print('mean = ', mean)
+    # print('std = ', std)
 
+    # with U.get_session().as_default() as sess:
+    #     max_weight = -999999
+    #     min_weight = 999999
+    #     with tf.variable_scope('pol'):
+    #         for i in range(len(pi.policy_tensor)):
+    #             x = pi.policy_tensor[i]
+    #             weights_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/kernel:0')
+    #             weights = sess.run(weights_tensor)
+    #             max_weight = max(max_weight, np.max(weights))
+    #             min_weight = min(min_weight, np.min(weights))
+    #             bias_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/bias:0')
+    #             bias = sess.run(bias_tensor)
+    #             max_weight = max(max_weight, np.max(bias))
+    #             min_weight = min(min_weight, np.min(bias))
+    
+    # print("max = ", max_weight)
+    # print("min = ", min_weight)
+            
+    # obs = []
     while True:
         prevac = ac
         ac, vpred = pi.act(False, ob)
         ob, rew, done, _ = env.step(ac)
+        # obs.append(ob)
 
         rewards += rew
         itr += 1
 
         if done:
             print("rewards:", rewards)
+            # pi.ob_rms.update(np.array(obs))
+
             return
 ########################################################################
 
@@ -101,6 +124,63 @@ def add_vtarg_and_adv(seg, gamma, lam):
         delta = rew[t] + gamma * vpred[t+1] * nonterminal - vpred[t]
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
     seg["tdlamret"] = seg["adv"] + seg["vpred"]
+
+######################### Jie Xu ##################3##
+def build_graph_only(env, policy_fn,*,
+        timesteps_per_actorbatch, # timesteps per actor per update
+        clip_param, entcoeff, # clipping parameter epsilon, entropy coeff
+        optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
+        gamma, lam, # advantage estimation
+        max_timesteps=0, max_episodes=0, max_iters=0, max_seconds=0,  # time constraint
+        callback=None, # you can do anything in the callback, since it takes locals(), globals()
+        adam_epsilon=1e-5,
+        schedule='constant', # annealing for stepsize parameters (epsilon and adam)
+        ):
+    sess = U.get_session()
+    init_op = tf.global_variables_initializer()
+    sess.run(init_op)
+    # Setup losses and stuff
+    # ----------------------------------------
+    ob_space = env.observation_space
+    ac_space = env.action_space
+    pi = policy_fn("pi", ob_space, ac_space) # Construct network for new policy
+    oldpi = policy_fn("oldpi", ob_space, ac_space) # Network for old policy
+    atarg = tf.placeholder(dtype=tf.float32, shape=[None]) # Target advantage function (if applicable)
+    ret = tf.placeholder(dtype=tf.float32, shape=[None]) # Empirical return
+
+    lrmult = tf.placeholder(name='lrmult', dtype=tf.float32, shape=[]) # learning rate multiplier, updated with schedule
+    clip_param = clip_param * lrmult # Annealed cliping parameter epislon
+
+    ob = U.get_placeholder_cached(name="ob")
+    ac = pi.pdtype.sample_placeholder([None])
+
+    kloldnew = oldpi.pd.kl(pi.pd)
+    ent = pi.pd.entropy()
+    meankl = tf.reduce_mean(kloldnew)
+    meanent = tf.reduce_mean(ent)
+    pol_entpen = (-entcoeff) * meanent
+
+    ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) # pnew / pold
+    surr1 = ratio * atarg # surrogate from conservative policy iteration
+    surr2 = tf.clip_by_value(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg #
+    pol_surr = - tf.reduce_mean(tf.minimum(surr1, surr2)) # PPO's pessimistic surrogate (L^CLIP)
+    vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
+    total_loss = pol_surr + pol_entpen + vf_loss
+    losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent]
+    loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent"]
+
+    var_list = pi.get_trainable_variables()
+    lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
+    adam = MpiAdam(var_list, epsilon=adam_epsilon)
+
+    assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
+        for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
+    compute_losses = U.function([ob, ac, atarg, ret, lrmult], losses)
+
+    U.initialize()
+    adam.sync()
+    
+#######################################################
 
 def learn(env, play_env, policy_fn, *,
         timesteps_per_actorbatch, # timesteps per actor per update
