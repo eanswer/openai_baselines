@@ -68,29 +68,6 @@ def play_one_round(pi, env):
     ob = env.reset()
     rewards = 0
     itr = 0
-
-    # output for runningmeanst
-    # mean, std = pi.get_mean_std()
-    # print('mean = ', mean)
-    # print('std = ', std)
-
-    # with U.get_session().as_default() as sess:
-    #     max_weight = -999999
-    #     min_weight = 999999
-    #     with tf.variable_scope('pol'):
-    #         for i in range(len(pi.policy_tensor)):
-    #             x = pi.policy_tensor[i]
-    #             weights_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/kernel:0')
-    #             weights = sess.run(weights_tensor)
-    #             max_weight = max(max_weight, np.max(weights))
-    #             min_weight = min(min_weight, np.min(weights))
-    #             bias_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/bias:0')
-    #             bias = sess.run(bias_tensor)
-    #             max_weight = max(max_weight, np.max(bias))
-    #             min_weight = min(min_weight, np.min(bias))
-    
-    # print("max = ", max_weight)
-    # print("min = ", min_weight)
             
     # obs = []
     while True:
@@ -179,6 +156,39 @@ def build_graph_only(env, policy_fn,*,
 
     U.initialize()
     adam.sync()
+
+    return pi
+
+def get_policy_parameters(pi):
+    # output for runningmeanst
+    mean, std = pi.get_mean_std()
+
+    with U.get_session().as_default() as sess:
+        with tf.variable_scope('pol'):
+            # W0, b0
+            x = pi.policy_tensor0
+            weights_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/kernel:0')
+            bias_tensor = bias_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/bias:0')
+            W0, b0 = sess.run([weights_tensor, bias_tensor])
+
+            # W_hidden, b_hidden
+            W_hidden = []
+            b_hidden = []
+            for i in range(len(pi.policy_tensor_hidden)):
+                x = pi.policy_tensor_hidden[i]
+                weights_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/kernel:0')
+                bias_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/bias:0')
+                W, b = sess.run([weights_tensor, bias_tensor])
+                W_hidden.append(W)
+                b_hidden.append(b)
+
+            # W1, b1
+            x = pi.policy_tensor1
+            weights_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/kernel:0')
+            bias_tensor = bias_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/bias:0')
+            W1, b1 = sess.run([weights_tensor, bias_tensor])
+
+    return W0, b0, W_hidden, b_hidden, W1, b1, mean, std
     
 #######################################################
 
