@@ -379,7 +379,7 @@ def learn(env, play_env, policy_fn, *,
 
             ################# Record training results / Jie Xu #####################
             fp = open(training_rewards_file, "a")
-            fp.write("%f\n" % np.mean(rewbuffer))
+            fp.write("%f %f\n" % (np.mean(rewbuffer), np.mean(lenbuffer)))
             fp.close()
             ########################################################################
 

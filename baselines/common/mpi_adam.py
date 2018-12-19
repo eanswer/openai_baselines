@@ -19,6 +19,7 @@ class MpiAdam(object):
         self.comm = MPI.COMM_WORLD if comm is None else comm
 
     def update(self, localg, stepsize):
+        # print(np.linalg.norm(localg), stepsize)
         if self.t % 100 == 0:
             self.check_synced()
         localg = localg.astype('float32')
