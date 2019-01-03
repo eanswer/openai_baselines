@@ -111,7 +111,7 @@ def build_graph_only(env, policy_fn,*,
         max_timesteps=0, max_episodes=0, max_iters=0, max_seconds=0,  # time constraint
         callback=None, # you can do anything in the callback, since it takes locals(), globals()
         adam_epsilon=1e-5,
-        schedule='constant', # annealing for stepsize parameters (epsilon and adam)
+        schedule='constant' # annealing for stepsize parameters (epsilon and adam)
         ):
     sess = U.get_session()
     init_op = tf.global_variables_initializer()
@@ -256,9 +256,9 @@ def learn(env, play_env, policy_fn, *,
     adam.sync()
 
     ######################### Save model / Jie Xu ##########################
-    with U.get_session().as_default() as sess:
-        writer = tf.summary.FileWriter("/home/eanswer/Projects/ReinforcementLearning/tensorflow_tutorial")
-        writer.add_graph(tf.get_default_graph())
+    #with U.get_session().as_default() as sess:
+    #    writer = tf.summary.FileWriter("/home/eanswer/Projects/ReinforcementLearning/tensorflow_tutorial")
+    #    writer.add_graph(tf.get_default_graph())
     # Resume model if a model file is provided
     if restore_model_from_file:
         saver=tf.train.Saver()
