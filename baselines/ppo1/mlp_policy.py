@@ -114,7 +114,7 @@ class MlpSharedPolicy(object):
             #            [data2, model0, ob]
             #            [data2, model1, ob]
             #            [data2, model2, ob]
-            for i in range(num_hid_layers):
+            for i in range(np.sum(num_hid_layers)):
                 last_out = tf.nn.tanh(tf.layers.dense(last_out, hid_size, name="fc%i"%(i+1), kernel_initializer=U.normc_initializer(1.0)))
             self.vpred = tf.layers.dense(last_out, 1, name='final', kernel_initializer=U.normc_initializer(1.0))[:,0]
             self.vpred = tf.reduce_sum(tf.reshape(self.vpred, shape=[-1, n]), axis=1)
@@ -134,22 +134,30 @@ class MlpSharedPolicy(object):
             #            [data1, model2, ob]
             #            [data2, model2, ob]
             self.policy_tensor0 = None
-            self.policy_tensor_hidden = []
-            self.policy_tensor1 = None
-            for i in range(num_hid_layers):
+            self.policy_tensor_hidden_shared = []
+            for i in range(num_hid_layers[0]):
                 dense = tf.layers.dense(last_out, hid_size, name='fc%i'%(i+1), kernel_initializer=U.normc_initializer(1.0))
                 # last_out = tf.nn.tanh(tf.layers.dense(last_out, hid_size, name='fc%i'%(i+1), kernel_initializer=U.normc_initializer(1.0)))
                 last_out = tf.nn.tanh(dense)
                 if i == 0:
                     self.policy_tensor0 = dense
                 else:
-                    self.policy_tensor_hidden.append(dense)
+                    self.policy_tensor_hidden_shared.append(dense)
 
             last_outs = tf.split(last_out, num_or_size_splits=n, axis=0)
             pd_means = []
             pd_vars = []
+            self.policy_tensor_hidden_single = []
             self.policy_tensor1 = []
             for i, last_out, dof in zip(range(n), last_outs, ac_dof):
+                hidden = []
+                for j in range(num_hid_layers[1]):
+                    dense = tf.layers.dense(last_out, hid_size, name='fc%i_%i'%(j+num_hid_layers[0]+1, i), kernel_initializer=U.normc_initializer(1.0))
+                    # last_out = tf.nn.tanh(tf.layers.dense(last_out, hid_size, name='fc%i'%(i+1), kernel_initializer=U.normc_initializer(1.0)))
+                    last_out = tf.nn.tanh(dense)
+                    hidden.append(dense)
+                self.policy_tensor_hidden_single.append(hidden)
+
                 if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
                     mean = tf.layers.dense(last_out, dof, name='final%i'%(i), kernel_initializer=U.normc_initializer(0.01))
                     self.policy_tensor1.append(mean)
