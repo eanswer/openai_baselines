@@ -8,6 +8,7 @@ from baselines.common.mpi_moments import mpi_moments
 from mpi4py import MPI
 from collections import deque
 from multiprocessing import Process, Queue, current_process
+import IPython
 
 def traj_segment_generator_parallel(pi, env, horizon, stochastic):
     ac = env.action_space.sample() # not used, just so we have the datatype
@@ -150,6 +151,9 @@ def traj_segment_generator(pi, env, horizon, stochastic):
         if new:
             ep_rets.append(cur_ep_ret)
             ep_lens.append(cur_ep_len)
+            if cur_ep_ret > 1005.0 or cur_ep_len > 1005:
+                print('ERROR: ret =', cur_ep_ret, 'len =', cur_ep_len)
+                IPython.embed()
             cur_ep_ret = 0
             cur_ep_len = 0
             ob = env.reset()
@@ -451,6 +455,9 @@ def learn(env, play_env, policy_fn, *,
             rewbuffer.extend(rews)
             logger.record_tabular("EpLenMean", np.mean(lenbuffer))
             logger.record_tabular("EpRewMean", np.mean(rewbuffer))
+            if np.max(rewbuffer) > 1005.0 or np.max(lenbuffer) > 1005:
+                print('ERROR: max rewbuffer=', np.max(rewbuffer), 'maxlenbuffer=', np.max(lenbuffer))
+                IPython.embed()
             logger.record_tabular("EpThisIter", len(lens))
             episodes_so_far += len(lens)
             timesteps_so_far += sum(lens)
