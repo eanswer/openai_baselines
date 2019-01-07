@@ -191,7 +191,31 @@ def get_policy_parameters(pi):
             W1, b1 = sess.run([weights_tensor, bias_tensor])
 
     return W0, b0, W_hidden, b_hidden, W1, b1, mean, std
-    
+
+def get_mlp_shared_policy_parameters(pi):
+    # output for runningmeanst
+    mean, std = pi.get_mean_std()
+
+    with U.get_session().as_default() as sess:
+        with tf.variable_scope('pol'):
+            # W0, b0
+            x = pi.policy_tensor0
+            weights_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/kernel:0')
+            bias_tensor = bias_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/bias:0')
+            W0, b0 = sess.run([weights_tensor, bias_tensor])
+
+            # W_hidden, b_hidden
+            W_hidden_shared = []
+            b_hidden_shared = []
+            for x in pi.policy_tensor_hidden_shared:
+                weights_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/kernel:0')
+                bias_tensor = tf.get_default_graph().get_tensor_by_name(os.path.split(x.name)[0] + '/bias:0')
+                W, b = sess.run([weights_tensor, bias_tensor])
+                W_hidden_shared.append(W)
+                b_hidden_shared.append(b)
+
+    return W0, b0, W_hidden_shared, b_hidden_shared
+
 #######################################################
 
 def learn(env, play_env, policy_fn, *,
