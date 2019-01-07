@@ -87,7 +87,7 @@ class MlpSharedPolicy(object):
             # init function for variable getting
             self._init_get_functions()
 
-    def _init(self, ob_space, ac_space, ac_dof, hid_size, num_hid_layers, gaussian_fixed_var=True):
+    def _init(self, ob_space, ac_space, ac_dof, hid_size, num_hid_layers, gaussian_fixed_var=True, fix_shared=False):
         # We require the observation space to be a tuple of space.Box of the same type.
         assert isinstance(ob_space, gym.spaces.Box)
         n = ob_space.shape[0]
@@ -143,6 +143,8 @@ class MlpSharedPolicy(object):
                     self.policy_tensor0 = dense
                 else:
                     self.policy_tensor_hidden_shared.append(dense)
+            if fix_shared:
+                last_out = tf.stop_gradient(last_out)
 
             last_outs = tf.split(last_out, num_or_size_splits=n, axis=0)
             pd_means = []

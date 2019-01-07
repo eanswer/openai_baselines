@@ -10,99 +10,6 @@ from collections import deque
 from multiprocessing import Process, Queue, current_process
 import IPython
 
-def traj_segment_generator_parallel(pi, env, horizon, stochastic):
-    ac = env.action_space.sample() # not used, just so we have the datatype
-    ob = env.reset()
-    # Initialize history arrays
-    obs = np.array([ob for _ in range(horizon)])
-    rews = np.zeros(horizon, 'float32')
-    vpreds = np.zeros(horizon, 'float32')
-    news = np.zeros(horizon, 'int32')
-    acs = np.array([ac for _ in range(horizon)])
-    prevacs = acs.copy()
-    ep_rets = [] # returns of completed episodes in this segment
-    ep_lens = [] # lengths of ...
-    cnt = 0
-
-    def worker(input, output):
-        for _ in iter(input.get, 'STOP'):
-            obs = []
-            rews = []
-            vpreds = []
-            news = []
-            acs = []
-            prevacs = []
-            next_vpreds = []
-            cur_ep_ret = 0
-            cur_ep_len = 0
-            ob = env.reset()
-            new = True
-            ac = env.action_space.sample()
-            while True:
-                prevac = ac
-                ac, vpred = pi.act(stochastic, ob)
-                obs.append(ob)
-                vpreds.append(vpred)
-                news.append(new)
-                acs.append(ac)
-                prevacs.append(prevac)
-                next_vpreds.append(vpred * (1 - new))
-                ob, rew, new, _ = env.step(ac)
-                rews.append(rew)
-                cur_ep_ret += rew
-                cur_ep_len += 1
-                if new:
-                    break
-            my_env.close()
-            output.put({ 'ob': obs, 'rew': rews, 'vpred': vpreds, 'new': news,
-                     'ac': acs, 'prevac': prevacs, 'nextvpred': next_vpreds,
-                     'ep_rets': cur_ep_ret, 'ep_lens': cur_ep_len })
-
-    task_queue = Queue()
-    done_queue = Queue()
-    t = 0
-    while True:
-        worker_num = len(env)
-        print('Using', worker_num, 'workers')
-        # Submit tasks.
-        for i in range(worker_num):
-            task_queue.put(i)
-        # Start worker processes.
-        for _ in range(worker_num):
-            Process(target=worker, args=(task_queue, done_queue)).start()
-        # Get results.
-        for _ in range(worker_num):
-            info = done_queue.get()
-            if t >= horizon:
-                continue
-            ob = info['ob']
-            rew = info['rews']
-            vpred = info['vpred']
-            new = info['new']
-            ac = info['ac']
-            prevac = info['prevacs']
-            ep_ret = info['ep_rets']
-            l = info['ep_lens']
-            if t + l <= horizon:
-                ep_rets.append(ep_ret)
-                ep_lens.append(l)
-            if t + l >= horizon:
-                l = horizon - t
-                nextvpred = vpred[l - 1] * (1 - new[l - 1])
-            obs[t:t+l] = ob
-            rews[t:t+l] = rew
-            vpreds[t:t+l] = vpred
-            news[t:t+l] = new
-            acs[t:t+l] = ac
-            prevacs[t:t+l] = prevac
-            t += l
-        if t == horizon:
-            t = 0
-            yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
-                    "ac" : acs, "prevac" : prevacs, "nextvpred": nextvpred,
-                    "ep_rets" : ep_rets, "ep_lens" : ep_lens}
-
-
 def traj_segment_generator(pi, env, horizon, stochastic):
     t = 0
     ac = env.action_space.sample() # not used, just so we have the datatype
@@ -151,9 +58,6 @@ def traj_segment_generator(pi, env, horizon, stochastic):
         if new:
             ep_rets.append(cur_ep_ret)
             ep_lens.append(cur_ep_len)
-            if cur_ep_ret > 1005.0 or cur_ep_len > 1005:
-                print('ERROR: ret =', cur_ep_ret, 'len =', cur_ep_len)
-                IPython.embed()
             cur_ep_ret = 0
             cur_ep_len = 0
             ob = env.reset()
@@ -458,9 +362,6 @@ def learn(env, play_env, policy_fn, *,
             rewbuffer.extend(rews)
             logger.record_tabular("EpLenMean", np.mean(lenbuffer))
             logger.record_tabular("EpRewMean", np.mean(rewbuffer))
-            if np.max(rewbuffer) > 1005.0 or np.max(lenbuffer) > 1005:
-                print('ERROR: max rewbuffer=', np.max(rewbuffer), 'maxlenbuffer=', np.max(lenbuffer))
-                IPython.embed()
             logger.record_tabular("EpThisIter", len(lens))
             episodes_so_far += len(lens)
             timesteps_so_far += sum(lens)
