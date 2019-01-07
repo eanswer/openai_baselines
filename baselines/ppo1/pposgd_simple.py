@@ -9,6 +9,7 @@ from mpi4py import MPI
 from collections import deque
 from multiprocessing import Process, Queue, current_process
 import IPython
+import os
 
 def traj_segment_generator(pi, env, horizon, stochastic):
     t = 0
@@ -287,8 +288,8 @@ def learn(env, play_env, policy_fn, *,
     # Resume model if a model file is provided
     if restore_model_from_file:
         saver=tf.train.Saver()
-        saver.restore(tf.get_default_session(), model_directory+restore_model_from_file)
-        logger.log("Loaded model from {}".format(model_directory+restore_model_from_file))
+        saver.restore(tf.get_default_session(), os.path.join(model_directory, restore_model_from_file))
+        logger.log("Loaded model from {}".format(os.path.join(model_directory, restore_model_from_file)))
         print("load")
     ########################################################################
     if play and restore_model_from_file:
@@ -312,10 +313,10 @@ def learn(env, play_env, policy_fn, *,
         lenbuffer = deque(maxlen=100) # rolling buffer for episode lengths
         rewbuffer = deque(maxlen=100) # rolling buffer for episode rewards
 
-        assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
+        #assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
 
         ################# Record training results / Jie Xu #####################
-        training_rewards_file = model_directory + "rewards.txt"
+        training_rewards_file = os.path.join(model_directory, "rewards.txt")
         fp = open(training_rewards_file, "w")
         fp.close()
         ########################################################################
@@ -401,7 +402,7 @@ def learn(env, play_env, policy_fn, *,
                 if save_model_with_prefix:
                     saver = tf.train.Saver()
                     with U.get_session().as_default() as sess:
-                        modelF= model_directory+save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt"
+                        modelF= os.path.join(model_directory, save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt")
                         save_path = saver.save(sess, modelF)
                         logger.log("Saved model to file :{}".format(modelF))
             ########################################################################
@@ -416,7 +417,7 @@ def learn(env, play_env, policy_fn, *,
         if save_model_with_prefix:
             saver = tf.train.Saver()
             with U.get_session().as_default() as sess:
-                modelF= model_directory+save_model_with_prefix+"_final.ckpt"
+                modelF= os.path.join(model_directory, save_model_with_prefix+"_final.ckpt")
                 save_path = saver.save(sess, modelF)
                 logger.log("Saved model to file :{}".format(modelF))
         ########################################################################
@@ -521,7 +522,7 @@ def learn_shared(env, play_env, policy_fn, *,
         assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
 
         ################# Record training results / Jie Xu #####################
-        training_rewards_file = model_directory + "rewards.txt"
+        training_rewards_file = os.path.join(model_directory, "rewards.txt")
         fp = open(training_rewards_file, "w")
         fp.close()
         ########################################################################
