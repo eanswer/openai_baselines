@@ -181,7 +181,7 @@ def play_one_round(pi, env):
             print("rewards:", rewards)
             # pi.ob_rms.update(np.array(obs))
 
-            return
+            return rewards
 ########################################################################
 
 def add_vtarg_and_adv(seg, gamma, lam):
@@ -365,8 +365,11 @@ def learn(env, play_env, policy_fn, *,
     ########################################################################
     if play and restore_model_from_file:
         ######################### Jie Xu ############################
+        r = []
         for times in range(100):
-            play_one_round(pi, play_env)
+            r.append(play_one_round(pi, play_env))
+            if times % 10 == 0:
+                print('running average [', times, ']:', np.mean(r))
         #############################################################
     else:
         # Prepare for rollouts
