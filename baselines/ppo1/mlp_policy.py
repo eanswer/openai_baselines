@@ -26,6 +26,7 @@ class MlpPolicy(object):
 
         with tf.variable_scope('vf'):
             obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
+            self.obz = obz
             # obz = ob
             last_out = obz
             for i in range(num_hid_layers):
