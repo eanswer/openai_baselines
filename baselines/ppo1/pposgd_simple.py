@@ -76,6 +76,7 @@ def play_one_round(pi, env):
     while True:
         prevac = ac
         ac, vpred = pi.act(False, ob)
+        # ac, vpred = pi.act(True, ob)
         ob, rew, done, _ = env.step(ac)
         # obs.append(ob)
 
@@ -316,6 +317,7 @@ def learn(env, play_env, policy_fn, *,
         #assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
 
         ################# Record training results / Jie Xu #####################
+        best_rew = 0.0
         training_rewards_file = os.path.join(model_directory, "rewards.txt")
         fp = open(training_rewards_file, "w")
         fp.close()
@@ -405,6 +407,16 @@ def learn(env, play_env, policy_fn, *,
                         modelF= os.path.join(model_directory, save_model_with_prefix+"_afterIter_"+str(iters_so_far)+".ckpt")
                         save_path = saver.save(sess, modelF)
                         logger.log("Saved model to file :{}".format(modelF))
+            ########################################################################
+
+            ######################### Save Best model / Jie Xu ##########################
+            if np.mean(rewbuffer) > best_rew:
+                best_rew = np.mean(rewbuffer)
+                saver = tf.train.Saver()
+                with U.get_session().as_default() as sess:
+                    modelF= os.path.join(model_directory, "best_model_"+str(iters_so_far)+".ckpt")
+                    save_path = saver.save(sess, modelF)
+                    logger.log("Saved best model to file :{}".format(modelF))
             ########################################################################
 
             ################# Record training results / Jie Xu #####################
