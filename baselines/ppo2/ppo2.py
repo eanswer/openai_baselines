@@ -160,27 +160,12 @@ class Runner(AbstractEnvRunner):
     run():
     - Make a mini batch
     """
-    def __init__(self, *, env, play_env, model, nsteps, gamma, lam, nenvs):
+    def __init__(self, *, env, model, nsteps, gamma, lam):
         super().__init__(env=env, model=model, nsteps=nsteps)
         # Lambda used in GAE (General Advantage Estimation)
         self.lam = lam
         # Discount rate
         self.gamma = gamma
-        # play env
-        self.play_env = play_env
-        # nenvs
-        self.nenvs = nenvs
-
-    def play(self):
-        obs = self.play_env.reset()
-        dim_obs = len(obs)
-        while True:
-            obs = np.repeat(obs, self.nenvs)
-            obs = np.resize(obs, (self.nenvs, dim_obs))
-            action, _, _, _ = self.model.step(obs)
-            obs, reward, done, _ = self.play_env.step(action[0])
-            if done:
-                break
 
     def run(self):
         # Here, we init the lists that will contain the mb of experiences
@@ -261,10 +246,10 @@ def constfn(val):
     return f
 
 def learn(*, model_directory, 
-            network, env, num_envs, total_timesteps, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4,
+            network, env, total_timesteps, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4,
             vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
             log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
-            save_interval=0, load_path=None, play_env = None, **network_kwargs):
+            save_interval=0, load_path=None, **network_kwargs):
     '''
     Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
 
@@ -349,7 +334,7 @@ def learn(*, model_directory,
     if load_path is not None:
         model.load(load_path)
     # Instantiate the runner object
-    runner = Runner(env=env, play_env = play_env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, nenvs = num_envs)
+    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
 
     epinfobuf = deque(maxlen=100)
     
@@ -377,9 +362,6 @@ def learn(*, model_directory,
         # Get minibatch
         obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
         epinfobuf.extend(epinfos)
-
-        if update % 10 == 0 and play_env is not None and MPI.COMM_WORLD.Get_rank() == 0:
-            runner.play()
 
         # Here what we're going to do is for each minibatch calculate the loss and append it.
         mblossvals = []
