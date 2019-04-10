@@ -10,6 +10,10 @@ from collections import deque
 from multiprocessing import Process, Queue, current_process
 import IPython
 import os
+try:
+    from mpi4py import MPI
+except ImportError:
+    MPI = None
 
 def traj_segment_generator(pi, env, horizon, stochastic):
     t = 0
@@ -420,9 +424,10 @@ def learn(env, play_env, policy_fn, *,
             ########################################################################
 
             ################# Record training results / Jie Xu #####################
-            fp = open(training_rewards_file, "a")
-            fp.write("%f %f\n" % (np.mean(rewbuffer), np.mean(lenbuffer)))
-            fp.close()
+            if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
+                fp = open(training_rewards_file, "a")
+                fp.write("%f %f\n" % (np.mean(rewbuffer), np.mean(lenbuffer)))
+                fp.close()
             ########################################################################
 
         ######################### Save model / Jie Xu ##########################
@@ -626,9 +631,10 @@ def learn_shared(env, play_env, policy_fn, *,
             ########################################################################
 
             ################# Record training results / Jie Xu #####################
-            fp = open(training_rewards_file, "a")
-            fp.write("%f %f\n" % (np.mean(rewbuffer), np.mean(lenbuffer)))
-            fp.close()
+            if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
+                fp = open(training_rewards_file, "a")
+                fp.write("%f %f\n" % (np.mean(rewbuffer), np.mean(lenbuffer)))
+                fp.close()
             ########################################################################
 
         ######################### Save model / Jie Xu ##########################
