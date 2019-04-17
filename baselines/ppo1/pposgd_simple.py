@@ -329,7 +329,7 @@ def learn(env, play_env, policy_fn, *,
         
         while True:
             ################# play trained model / Jie Xu #####################
-            if iters_so_far % 5 == 0:
+            if iters_so_far % 50 == 0:
                 play_one_round(pi, play_env)
             ###################################################################
 
