@@ -414,6 +414,7 @@ def learn(env, play_env, policy_fn, *,
             ########################################################################
 
             ######################### Save Best model / Jie Xu ##########################
+            best_rew *= 0.999
             if np.mean(rewbuffer) > best_rew:
                 best_rew = np.mean(rewbuffer)
                 saver = tf.train.Saver()
