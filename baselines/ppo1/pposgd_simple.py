@@ -329,8 +329,9 @@ def learn(env, play_env, policy_fn, *,
         
         while True:
             ################# play trained model / Jie Xu #####################
-            if iters_so_far % 50 == 0:
-                play_one_round(pi, play_env)
+            if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
+                if iters_so_far % 5 == 0:
+                    play_one_round(pi, play_env)
             ###################################################################
 
             if callback: callback(locals(), globals())
@@ -414,7 +415,7 @@ def learn(env, play_env, policy_fn, *,
             ########################################################################
 
             ######################### Save Best model / Jie Xu ##########################
-            best_rew *= 0.999
+            # best_rew *= 0.999
             if np.mean(rewbuffer) > best_rew:
                 best_rew = np.mean(rewbuffer)
                 saver = tf.train.Saver()
@@ -547,8 +548,9 @@ def learn_shared(env, play_env, policy_fn, *,
 
         while True:
             ################# play trained model / Jie Xu #####################
-            if iters_so_far % 5 == 0:
-                play_one_round(pi, play_env)
+            if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
+                if iters_so_far % 5 == 0:
+                    play_one_round(pi, play_env)
             ###################################################################
 
             if callback: callback(locals(), globals())

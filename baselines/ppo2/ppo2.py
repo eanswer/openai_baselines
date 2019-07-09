@@ -350,7 +350,8 @@ def learn(*, model_directory,
 
     nupdates = total_timesteps//nbatch
     for update in range(1, nupdates+1):
-        print("current ", update, " / ", nupdates + 1)
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            print("current ", update, " / ", nupdates + 1)
         assert nbatch % nminibatches == 0
         # Start timer
         tstart = time.time()
@@ -435,7 +436,121 @@ def learn(*, model_directory,
             savepath = osp.join(checkdir, '%.6i'%update)
             print('Saving to', savepath)
             model.save(savepath)
+        
+        best_rew *= 0.999
+        rew_mean = safemean([epinfo['r'] for epinfo in epinfobuf])
+        if MPI.COMM_WORLD.Get_rank() == 0 and rew_mean > best_rew:
+            best_rew = rew_mean
+            checkdir = osp.join(model_directory, 'best_model')
+            os.makedirs(checkdir, exist_ok=True)
+            print('Saving to', savepath)
+            model.save(savepath)
+
     return model
+
+def play(*, model_directory, 
+            network, env, total_timesteps, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4,
+            vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
+            log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
+            save_interval=0, load_path=None, **network_kwargs):
+    '''
+    Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
+
+    Parameters:
+    ----------
+
+    network:                          policy network architecture. Either string (mlp, lstm, lnlstm, cnn_lstm, cnn, cnn_small, conv_only - see baselines.common/models.py for full list)
+                                      specifying the standard network architecture, or a function that takes tensorflow tensor as input and returns
+                                      tuple (output_tensor, extra_feed) where output tensor is the last network layer output, extra_feed is None for feed-forward
+                                      neural nets, and extra_feed is a dictionary describing how to feed state into the network for recurrent neural nets.
+                                      See common/models.py/lstm for more details on using recurrent nets in policies
+
+    env: baselines.common.vec_env.VecEnv     environment. Needs to be vectorized for parallel environment simulation.
+                                      The environments produced by gym.make can be wrapped using baselines.common.vec_env.DummyVecEnv class.
+
+
+    nsteps: int                       number of steps of the vectorized environment per update (i.e. batch size is nsteps * nenv where
+                                      nenv is number of environment copies simulated in parallel)
+
+    total_timesteps: int              number of timesteps (i.e. number of actions taken in the environment)
+
+    ent_coef: float                   policy entropy coefficient in the optimization objective
+
+    lr: float or function             learning rate, constant or a schedule function [0,1] -> R+ where 1 is beginning of the
+                                      training and 0 is the end of the training.
+
+    vf_coef: float                    value function loss coefficient in the optimization objective
+
+    max_grad_norm: float or None      gradient norm clipping coefficient
+
+    gamma: float                      discounting factor
+
+    lam: float                        advantage estimation discounting factor (lambda in the paper)
+
+    log_interval: int                 number of timesteps between logging events
+
+    nminibatches: int                 number of training minibatches per update. For recurrent policies,
+                                      should be smaller or equal than number of environments run in parallel.
+
+    noptepochs: int                   number of training epochs per update
+
+    cliprange: float or function      clipping range, constant or schedule function [0,1] -> R+ where 1 is beginning of the training
+                                      and 0 is the end of the training
+
+    save_interval: int                number of timesteps between saving events
+
+    load_path: str                    path to load the model from
+
+    **network_kwargs:                 keyword arguments to the policy / network builder. See baselines.common/policies.py/build_policy and arguments to a particular type of network
+                                      For instance, 'mlp' network architecture has arguments num_hidden and num_layers.
+
+
+
+    '''
+
+    set_global_seeds(seed)
+
+    if isinstance(lr, float): lr = constfn(lr)
+    else: assert callable(lr)
+    if isinstance(cliprange, float): cliprange = constfn(cliprange)
+    else: assert callable(cliprange)
+    total_timesteps = int(total_timesteps)
+
+    policy = build_policy(env, network, **network_kwargs)
+
+    # Get the nb of env
+    nenvs = env.num_envs
+
+    # Get state_space and action_space
+    ob_space = env.observation_space
+    ac_space = env.action_space
+
+    # Calculate the batch_size
+    nbatch = nenvs * nsteps
+    nbatch_train = nbatch // nminibatches
+
+    # Instantiate the model object (that creates act_model and train_model)
+    make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
+                    nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
+                    max_grad_norm=max_grad_norm)
+    model = make_model()
+    if load_path is not None:
+        model.load(load_path)
+    # Instantiate the runner object
+    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+
+    epinfobuf = deque(maxlen=100)
+
+    # Start total timer
+    tfirststart = time.time()
+
+    nupdates = total_timesteps//nbatch
+    for update in range(1, nupdates+1):
+        # Get minibatch
+        obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
+
+    return model
+
 # Avoid division error when calculate the mean (in our case if epinfo is empty returns np.nan, not return an error)
 def safemean(xs):
     return np.nan if len(xs) == 0 else np.mean(xs)
